@@ -1,0 +1,47 @@
+name: 🤖 AGENTE 31 DIAS · RODA FORA DO CELULAR
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'
+permissions: write-all
+concurrency:
+  group: agente
+  cancel-in-progress: false
+jobs:
+  roda:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Prepara
+        run: pip install openhands -q 2>&1 | tail -1
+      - name: Trabalha 6h, salva tudo, recomeça
+        run: |
+          cat > TAREFA.md <<'FIM'
+CRIE APLICATIVO ANDROID NATIVO COMPLETO + SITE WEB RESPONSIVO, BANCO DE DADOS, PAINEL ADMIN, LOGIN, CADASTRO E RELATORIOS. 100% AUTONOMO, NUNCA ME PERGUNTA NADA, DECIDE TUDO SOZINHO. CRIA TESTES, RODA TESTES, SE DER ERRO CONSERTA SOZINHO QUANTAS VEZES PRECISAR. GERA APK ANDROID ASSINADO V2/V3 MAXIMO 30MB PRONTO PARA INSTALAR. SITE JA HOSPEDADO E NO AR. ZERO MARCA, ZERO MARCA DAGUA, ZERO LINK, ZERO RODAPE. GRAVA CADA PASSO TUDO EM COMMIT. RODA 24H/DIA, RENOVA CICLO SOZINHO DE 6 EM 6H ATE 100% PRONTO, LIMITE 31 DIAS. SO AVISA NO FIM.
+FIM
+          openhands --task-file TAREFA.md --max-iterations -1 --headless --save-trajectory logs/ || true
+      - name: 💾 SALVA TUDO NO GIT
+        run: |
+          D=$(date +%Y%m%d-%H%M)
+          echo "Relatorio $D" > PROGRESSO.md
+          ls -la >> PROGRESSO.md
+          git add -A
+          git commit -m "✅ Progresso $D — continua" || true
+          git push || true
+      - name: 📦 GERA APK
+        uses: android-actions/build-apk@v4
+        continue-on-error: true
+      - name: ⬆️ GUARDA APK 90 DIAS
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-android-assinado.apk
+          path: '**/*.apk'
+          retention-days: 90
+      - name: 🌐 SITE NO AR
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{secrets.GITHUB_TOKEN}}
+          publish_dir: dist
