@@ -1,6 +1,7 @@
 name: 🤖 AGENTE 31 DIAS · RODA FORA DO CELULAR
 on:
   workflow_dispatch:
+  workflow_dispatch:
   schedule:
     - cron: '0 */6 * * *'
 permissions: write-all
