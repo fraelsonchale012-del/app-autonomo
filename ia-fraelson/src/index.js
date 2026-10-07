@@ -107,7 +107,8 @@ async function askGroq(text, peer, isOwner = false, ctx = null) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(90000),
+      // Evita que uma chamada de IA deixe o chat bloqueado durante vários minutos.
+      signal: AbortSignal.timeout(45000),
     });
     if (!res.ok) throw new Error(`Groq ${res.status}`);
     const data = await res.json();
@@ -233,6 +234,9 @@ async function main() {
 }
 
 const busy = new Set();
+// Se chegam mensagens enquanto a IA responde, processa a mais recente depois
+// da resposta atual em vez de a descartar silenciosamente.
+const pending = new Map();
 
 async function handle(sock, msg) {
   if (!msg.message || !msg.key?.remoteJid) return;
@@ -279,7 +283,11 @@ async function handle(sock, msg) {
     if (!text) return;
   }
 
-  if (busy.has(chat)) return; // já estou a pensar neste chat
+  if (busy.has(chat)) {
+    pending.set(chat, msg);
+    console.log('[fila] mensagem guardada para', chat);
+    return;
+  }
   const cs = chatState(chat);
 
   // controlos mínimos (dono)
@@ -326,6 +334,11 @@ async function handle(sock, msg) {
     await sock.sendMessage(chat, { text: reason }, { quoted: msg }).catch(() => {});
   } finally {
     busy.delete(chat);
+    const next = pending.get(chat);
+    if (next) {
+      pending.delete(chat);
+      setImmediate(() => handle(sock, next).catch(e => console.warn('Erro na fila:', e.message)));
+    }
   }
 }
 
