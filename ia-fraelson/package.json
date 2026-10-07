@@ -1,0 +1,15 @@
+{
+  "name": "ia-fraelson",
+  "version": "1.0.0",
+  "description": "IA do Fraelson: o número +258846639103 com a IA do Superagent por trás",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "check": "node --check src/index.js"
+  },
+  "dependencies": {
+    "wa-sticker-formatter": "^4.4.4",
+    "@whiskeysockets/baileys": "6.7.22",
+    "pino": "^9.5.0"
+  }
+}

@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: ia-fraelson
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: AGENT_ID
+        value: 6a36e97fe868f9d59e44e248
+      - key: BASE_URL
+        value: https://app.base44.com
+      - key: OWNER_NUMBER
+        value: 258869045822
+      - key: AGENT_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
