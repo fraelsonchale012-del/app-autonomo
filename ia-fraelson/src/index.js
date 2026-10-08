@@ -97,20 +97,17 @@ async function askGroq(text, peer, isOwner = false, ctx = null) {
   const msgs = history.get(peer) || [];
   msgs.push({ role: 'user', content: text.slice(0, 2000) });
   const system = (isOwner ? OWNER_PERSONALITY : OTHERS_PERSONALITY) +
-    (isOwner && ctx?.allowTools ? ' TENS FERRAMENTAS REAIS (grupos, membros, mensagens, enquetes, tempo, pesquisa na web, agendamento). O dono tem autoridade total: aceita e faz TUDO o que ele mandar, nunca digas que não podes sem primeiro tentares com as ferramentas. Depois confirma o que fizeste numa frase curta. Se faltar uma ferramenta, chega ao objetivo pelo caminho mais próximo. Se falhar por falta de admin do grupo, explica isso.' : '');
+    (isOwner && ctx ? ' TENS FERRAMENTAS REAIS (grupos, membros, mensagens, enquetes, tempo, pesquisa na web, agendamento). O dono tem autoridade total: aceita e faz TUDO o que ele mandar, nunca digas que não podes sem primeiro tentares com as ferramentas. Depois confirma o que fizeste numa frase curta. Se faltar uma ferramenta, chega ao objetivo pelo caminho mais próximo. Se falhar por falta de admin do grupo, explica isso.' : '');
   let working = [{ role: 'system', content: system }, ...msgs.slice(-12)];
   let reply = '';
   for (let step = 0; step < 4; step++) {
     const body = { model: 'openai/gpt-oss-120b', messages: working, max_tokens: 900, reasoning_effort: 'low' };
-    // Em conversa normal de grupo, não enviar dezenas de definições de
-    // ferramentas: isso torna a chamada mais lenta e pode deixá-la presa.
-    if (isOwner && ctx?.allowTools) { body.tools = TOOL_DEFS; body.tool_choice = 'auto'; }
+    if (isOwner && ctx) { body.tools = TOOL_DEFS; body.tool_choice = 'auto'; }
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
       body: JSON.stringify(body),
-      // Evita que uma chamada de IA deixe o chat bloqueado durante vários minutos.
-      signal: AbortSignal.timeout(45000),
+      signal: AbortSignal.timeout(90000),
     });
     if (!res.ok) throw new Error(`Groq ${res.status}`);
     const data = await res.json();
@@ -236,9 +233,6 @@ async function main() {
 }
 
 const busy = new Set();
-// Se chegam mensagens enquanto a IA responde, processa a mais recente depois
-// da resposta atual em vez de a descartar silenciosamente.
-const pending = new Map();
 
 async function handle(sock, msg) {
   if (!msg.message || !msg.key?.remoteJid) return;
@@ -285,11 +279,7 @@ async function handle(sock, msg) {
     if (!text) return;
   }
 
-  if (busy.has(chat)) {
-    pending.set(chat, msg);
-    console.log('[fila] mensagem guardada para', chat);
-    return;
-  }
+  if (busy.has(chat)) return; // já estou a pensar neste chat
   const cs = chatState(chat);
 
   // controlos mínimos (dono)
@@ -322,18 +312,9 @@ async function handle(sock, msg) {
       } catch (e) { extra = '[não consegui listar os grupos agora] '; }
     }
     const prefix = (isGroup ? `[WhatsApp de ${sender}${isOwner ? ' (O DONO)' : ''}] ` : '') + extra;
-    // Em grupos, responder sempre como conversa normal. As ferramentas de
-    // administração continuam disponíveis nas mensagens privadas do dono;
-    // isto evita que o modelo tente executar uma ação e acabe sem texto.
-    const allowTools = !isGroup;
-    console.log('[brain]', JSON.stringify({ chat, isGroup, allowTools, chars: text.length }));
-    const reply = await askBrain(prefix + text.slice(0, 2000), chat, isOwner, { sock, chat, isGroup, msg, allowTools });
-    console.log('[brain] resposta', JSON.stringify({ chat, chars: reply.length }));
+    const reply = await askBrain(prefix + text.slice(0, 2000), chat, isOwner, { sock, chat, isGroup, msg });
     clearInterval(typingTimer);
-    await Promise.race([
-      sock.sendMessage(chat, { text: reply.slice(0, 3500) }, { quoted: msg }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('envio WhatsApp expirou')), 20000)),
-    ]);
+    await sock.sendMessage(chat, { text: reply.slice(0, 3500) }, { quoted: msg });
   } catch (e) {
     if (typingTimer) clearInterval(typingTimer);
     const reason = e.message === 'SEM_CHAVE'
@@ -345,11 +326,6 @@ async function handle(sock, msg) {
     await sock.sendMessage(chat, { text: reason }, { quoted: msg }).catch(() => {});
   } finally {
     busy.delete(chat);
-    const next = pending.get(chat);
-    if (next) {
-      pending.delete(chat);
-      setImmediate(() => handle(sock, next).catch(e => console.warn('Erro na fila:', e.message)));
-    }
   }
 }
 
