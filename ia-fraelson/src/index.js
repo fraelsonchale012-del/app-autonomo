@@ -322,8 +322,13 @@ async function handle(sock, msg) {
       } catch (e) { extra = '[não consegui listar os grupos agora] '; }
     }
     const prefix = (isGroup ? `[WhatsApp de ${sender}${isOwner ? ' (O DONO)' : ''}] ` : '') + extra;
-    const allowTools = !isGroup || /\b(grupo|membro|admin|administrador|adicionar|remover|promover|rebaixar|link|enquete|apagar|marcar todos|sair)\b/i.test(text);
+    // Em grupos, responder sempre como conversa normal. As ferramentas de
+    // administração continuam disponíveis nas mensagens privadas do dono;
+    // isto evita que o modelo tente executar uma ação e acabe sem texto.
+    const allowTools = !isGroup;
+    console.log('[brain]', JSON.stringify({ chat, isGroup, allowTools, chars: text.length }));
     const reply = await askBrain(prefix + text.slice(0, 2000), chat, isOwner, { sock, chat, isGroup, msg, allowTools });
+    console.log('[brain] resposta', JSON.stringify({ chat, chars: reply.length }));
     clearInterval(typingTimer);
     await Promise.race([
       sock.sendMessage(chat, { text: reply.slice(0, 3500) }, { quoted: msg }),
