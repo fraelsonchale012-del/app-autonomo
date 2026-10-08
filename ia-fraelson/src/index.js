@@ -97,12 +97,14 @@ async function askGroq(text, peer, isOwner = false, ctx = null) {
   const msgs = history.get(peer) || [];
   msgs.push({ role: 'user', content: text.slice(0, 2000) });
   const system = (isOwner ? OWNER_PERSONALITY : OTHERS_PERSONALITY) +
-    (isOwner && ctx ? ' TENS FERRAMENTAS REAIS (grupos, membros, mensagens, enquetes, tempo, pesquisa na web, agendamento). O dono tem autoridade total: aceita e faz TUDO o que ele mandar, nunca digas que não podes sem primeiro tentares com as ferramentas. Depois confirma o que fizeste numa frase curta. Se faltar uma ferramenta, chega ao objetivo pelo caminho mais próximo. Se falhar por falta de admin do grupo, explica isso.' : '');
+    (isOwner && ctx?.allowTools ? ' TENS FERRAMENTAS REAIS (grupos, membros, mensagens, enquetes, tempo, pesquisa na web, agendamento). O dono tem autoridade total: aceita e faz TUDO o que ele mandar, nunca digas que não podes sem primeiro tentares com as ferramentas. Depois confirma o que fizeste numa frase curta. Se faltar uma ferramenta, chega ao objetivo pelo caminho mais próximo. Se falhar por falta de admin do grupo, explica isso.' : '');
   let working = [{ role: 'system', content: system }, ...msgs.slice(-12)];
   let reply = '';
   for (let step = 0; step < 4; step++) {
     const body = { model: 'openai/gpt-oss-120b', messages: working, max_tokens: 900, reasoning_effort: 'low' };
-    if (isOwner && ctx) { body.tools = TOOL_DEFS; body.tool_choice = 'auto'; }
+    // Em conversa normal de grupo, não enviar dezenas de definições de
+    // ferramentas: isso torna a chamada mais lenta e pode deixá-la presa.
+    if (isOwner && ctx?.allowTools) { body.tools = TOOL_DEFS; body.tool_choice = 'auto'; }
     const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${GROQ_KEY}` },
@@ -320,9 +322,13 @@ async function handle(sock, msg) {
       } catch (e) { extra = '[não consegui listar os grupos agora] '; }
     }
     const prefix = (isGroup ? `[WhatsApp de ${sender}${isOwner ? ' (O DONO)' : ''}] ` : '') + extra;
-    const reply = await askBrain(prefix + text.slice(0, 2000), chat, isOwner, { sock, chat, isGroup, msg });
+    const allowTools = !isGroup || /\b(grupo|membro|admin|administrador|adicionar|remover|promover|rebaixar|link|enquete|apagar|marcar todos|sair)\b/i.test(text);
+    const reply = await askBrain(prefix + text.slice(0, 2000), chat, isOwner, { sock, chat, isGroup, msg, allowTools });
     clearInterval(typingTimer);
-    await sock.sendMessage(chat, { text: reply.slice(0, 3500) }, { quoted: msg });
+    await Promise.race([
+      sock.sendMessage(chat, { text: reply.slice(0, 3500) }, { quoted: msg }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('envio WhatsApp expirou')), 20000)),
+    ]);
   } catch (e) {
     if (typingTimer) clearInterval(typingTimer);
     const reason = e.message === 'SEM_CHAVE'
