@@ -195,6 +195,18 @@ async function main() {
     // permite ao WhatsApp reenviar mensagens que falharam a desencriptar
     getMessage: async (key) => sentCache.get(key.id) || undefined,
   });
+  // Primeiro arranque: gerar pairing code para ligar este WhatsApp sem QR.
+  if (!authState.creds.registered && typeof sock.requestPairingCode === 'function') {
+    const pairingNumber = String(process.env.PAIRING_NUMBER || OWNER).replace(/\D/g, '');
+    setTimeout(async () => {
+      try {
+        const code = await sock.requestPairingCode(pairingNumber);
+        console.log(`[PAIRING_CODE] ${code}`);
+      } catch (e) {
+        console.warn('[PAIRING_CODE] falhou:', e.message);
+      }
+    }, 3000);
+  }
   sock.ev.on('creds.update', saveCreds);
   const _send = sock.sendMessage.bind(sock);
   sock.sendMessage = async (jid, content, opts) => {
